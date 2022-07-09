@@ -1,7 +1,7 @@
 [package]
-name = "{{project-name}}"
+name = "dan-wasm"
 version = "0.1.0"
-authors = ["{{authors}}"]
+authors = ["dan@cipherstash.com"]
 edition = "2018"
 
 [lib]
@@ -14,6 +14,11 @@ default = ["console_error_panic_hook"]
 cfg-if = "0.1.2"
 worker = "0.0.9"
 serde_json = "1.0.67"
+ore-rs = { git = "https://github.com/cipherstash/ore.rs", branch = "generic-rng" }
+getrandom = { version = "0.2", features = ["js"] }
+rand_chacha = "0.3.1"
+hex-literal = "0.3.4"
+hex = "0.4.3"
 
 # The `console_error_panic_hook` crate provides better debugging of panics by
 # logging them with `console.error`. This is great for development, but requires

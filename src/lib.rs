@@ -1,7 +1,22 @@
 use serde_json::json;
 use worker::*;
+use ore_rs::{
+    ORECipher,  // Main ORE Cipher trait
+    OREEncrypt, // Traits for encrypting primitive types (e.g. u64)
+    scheme::bit2::OREAES128 // Specific scheme we want to use
+};
+use hex_literal::hex;
+use rand_chacha::ChaCha20Rng;
 
 mod utils;
+
+struct EncryptError {
+    msg: String
+}
+
+fn err(msg: &str) -> EncryptError {
+    EncryptError { msg: msg.to_string() }
+}
 
 fn log_request(req: &Request) {
     console_log!(
@@ -11,6 +26,33 @@ fn log_request(req: &Request) {
         req.cf().coordinates().unwrap_or_default(),
         req.cf().region().unwrap_or("unknown region".into())
     );
+}
+
+fn get_input<D>(ctx: &RouteContext<D>) -> std::result::Result<u64, EncryptError> {
+    if let Some(input_str) = ctx.param("input") {
+        let result: u64 = input_str
+            .parse()
+            .map_err(|_| err("Invalid plaintext"))?;
+
+        return Ok(result);
+    }
+
+    Err(err("No input provided"))
+}
+
+fn do_encrypt_get<D>(ctx: &RouteContext<D>) -> std::result::Result<String, EncryptError> {
+    let k1: [u8; 16] = hex!("00010203 04050607 08090a0b 0c0d0e0f");
+    let k2: [u8; 16] = hex!("00010203 04050607 08090a0b 0c0d0e0f");
+    let seed = hex!("00010203 04050607");
+
+    let input = get_input(&ctx)?;
+    let ore = OREAES128::<ChaCha20Rng>::init(k1, k2, &seed).map_err(|_| EncryptError { msg: "Cipher Init Failed".to_string() })?;
+
+    let result = input.encrypt(&ore)
+        .map_err(|_| err("Encryption Failed"))?
+        .to_bytes();
+
+    Ok(hex::encode(result))
 }
 
 #[event(fetch)]
@@ -29,26 +71,11 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
     // functionality and a `RouteContext` which you can use to  and get route parameters and
     // Environment bindings like KV Stores, Durable Objects, Secrets, and Variables.
     router
-        .get("/", |_, _| Response::ok("Hello from Workers!"))
-        .post_async("/form/:field", |mut req, ctx| async move {
-            if let Some(name) = ctx.param("field") {
-                let form = req.form_data().await?;
-                match form.get(name) {
-                    Some(FormEntry::Field(value)) => {
-                        return Response::from_json(&json!({ name: value }))
-                    }
-                    Some(FormEntry::File(_)) => {
-                        return Response::error("`field` param in form shouldn't be a File", 422);
-                    }
-                    None => return Response::error("Bad Request", 400),
-                }
+        .get("/:input", |_, ctx| {
+            match do_encrypt_get(&ctx) {
+                Ok(result) => return Response::ok(format!("OK: {}", result)),
+                Err(EncryptError { msg }) => Response::error(msg, 400)
             }
-
-            Response::error("Bad Request", 400)
-        })
-        .get("/worker-version", |_, ctx| {
-            let version = ctx.var("WORKERS_RS_VERSION")?.to_string();
-            Response::ok(version)
         })
         .run(req, env)
         .await
